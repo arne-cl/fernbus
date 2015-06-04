@@ -62,11 +62,11 @@ def create_browser_session(url=SEARCH_PAGE,
     browser_session.visit(url) # connect to the search page
     LOGGER.debug('browser session created.')
     return browser_session
-        
+
 
 def get_results(session, departure_stop, arrival_stop, date, timeout):
 	LOGGER.debug("Trying to find buses from {} to {} on {}".format(departure_stop, arrival_stop, date))
-    
+
 	def results_are_ready():
 		results = session.driver.document().cssselect('div.search-result')
 		try:
@@ -74,7 +74,7 @@ def get_results(session, departure_stop, arrival_stop, date, timeout):
 		except:
 			session.driver.render('error.png')
 			LOGGER.debug("Can't get results text. You'll need to wait longer.")
-    
+
 	start_field = session.at_css('#From')
 	start_field.set(departure_stop)
 
@@ -112,7 +112,7 @@ def parse_result(session, result):
 		departure = result.xpath('div[1]/div/div[1]/div[1]')[0]
 		departure_date = departure.xpath('div[1]/span[1]')[0].text
 		departure_time = departure.xpath('div[1]/span[3]')[0].text
-		departure_stop = departure.xpath('div[2]/span')[0].text    
+		departure_stop = departure.xpath('div[2]/span')[0].text
 
 		duration = result.xpath('div[1]/div/div[1]/div[2]')[0]
 		trip_duration = duration.xpath('div[1]')[0].text
@@ -122,10 +122,10 @@ def parse_result(session, result):
 		arrival_date = arrival.xpath('div[1]/span[1]')[0].text
 		arrival_time = arrival.xpath('div[1]/span[3]')[0].text
 		arrival_stop = arrival.xpath('div[2]/span')[0].text
-		
+
 		price_str = result.xpath('div[1]/div/div[2]/div[2]/div[1]/span[2]/strong')[0].text.split()[0]
 		price = u"{0:.2f} €".format(float(COMMA_REGEX.sub('.', price_str)))
-		
+
 		company = result.xpath('div[1]/div/div[2]/div[1]/div[1]/div[1]/span[2]')[0].text
 		return Connection(
 			departure_date=departure_date, departure_time=departure_time,
@@ -144,7 +144,7 @@ def parse_result(session, result):
 		else:
 			raise BusliniensucheParsingError(error_msg)
 
-    
+
 def find_bus_connections(departure_stop, arrival_stop, date, timeout):
     session = create_browser_session(url=SEARCH_PAGE)
     results, session = get_results(session, departure_stop, arrival_stop, date, timeout=timeout)
@@ -179,10 +179,10 @@ def run_cli():
 	parser.add_argument('destination')
 	parser.add_argument('date')
 	args = parser.parse_args(sys.argv[1:])
-	
+
 	if args.debug is True:
 		DEBUG = True
-	
+
 	connections = find_bus_connections(args.origin, args.destination,
 									   args.date, args.timeout)
 	table = results2table(connections)
