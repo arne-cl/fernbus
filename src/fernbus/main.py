@@ -94,9 +94,14 @@ def get_results(session, departure_stop, arrival_stop, date, timeout):
 	try:
 		waiter.wait_for(results_are_ready, interval=0.5, timeout=timeout)
 	except WaitTimeoutError as e:
-		LOGGER.debug("Request timed out. See error.png for a screenshot.")
+		error_msg = "Request timed out. See error.png for a screenshot."
+		LOGGER.debug(error_msg)
 		session.driver.render('error.png')
-		raise WaitTimeoutError
+		if DEBUG:
+			pudb.set_trace()
+		else:
+			raise WaitTimeoutError(error_msg)
+
 
 	results = session.driver.document().cssselect('div.search-result')
 	return results, session
