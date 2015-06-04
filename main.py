@@ -3,19 +3,23 @@
 # Author: Arne Neumann
 
 import argparse
+from collections import namedtuple
 import datetime
 import re
 import sys
-from collections import namedtuple
+import traceback
 from utils import create_module_logger
 
+from lxml import etree
 from prettytable import PrettyTable
 import dryscrape
 from dryscrape.mixins import WaitMixin, WaitTimeoutError
+import pudb
 
 from utils import create_module_logger, natural_sort_key
 
 
+DEBUG = False
 LOGGER = create_module_logger('main', filename='fernbus.log')
 SEARCH_PAGE = 'https://www.busliniensuche.de/'
 DELAY_MSG_REGEX = re.compile('Lade Busverbindungen')
@@ -28,6 +32,9 @@ Connection = namedtuple('Connection',
                          'trip_duration number_of_stops '
                          'arrival_date arrival_time arrival_stop '
                          'price company'))
+
+
+class BusliniensucheParsingError(Exception): pass
 
 
 def create_browser_session(url=SEARCH_PAGE,
@@ -57,39 +64,42 @@ def create_browser_session(url=SEARCH_PAGE,
     return browser_session
         
 
-def get_results(session, departure_stop, arrival_stop, date):
-    def results_are_ready():
-        results = session.driver.document().cssselect('div.search-result')
-        try:
-            return False if DELAY_MSG_REGEX.search(results[0].text) else True
-        except:
-            session.driver.render('error.png')
-            LOGGER.debug("Can't get results text")
+def get_results(session, departure_stop, arrival_stop, date, timeout=10):
+	LOGGER.debug("Trying to find buses from {} to {} on {}".format(departure_stop, arrival_stop, date))
     
-    start_field = session.at_css('#From')
-    start_field.set(departure_stop)
+	def results_are_ready():
+		results = session.driver.document().cssselect('div.search-result')
+		try:
+			return False if DELAY_MSG_REGEX.search(results[0].text) else True
+		except:
+			session.driver.render('error.png')
+			LOGGER.debug("Can't get results text")
+    
+	start_field = session.at_css('#From')
+	start_field.set(departure_stop)
 
-    destination_field = session.at_css('#To')
-    destination_field.set(arrival_stop)
+	destination_field = session.at_css('#To')
+	destination_field.set(arrival_stop)
 
-    departure_date = session.at_css('#When')
-    current_date = datetime.date.isoformat(datetime.date.today())
-    assert date >= current_date, "Can't search for bus connections in the past"
-    departure_date.set(date)
-    
-    search_button = session.at_css('.btn-warning')
-    search_button.click()
-    
-    waiter = WaitMixin()
-    
-    try:
-        waiter.wait_for(results_are_ready, interval=0.5, timeout=10)
-    except WaitTimeoutError as e:
-        LOGGER.debug("Request timed out. See error.png for a screenshot.")
-        session.driver.render('error.png')
-    
-    results = session.driver.document().cssselect('div.search-result')
-    return results, session
+	departure_date = session.at_css('#When')
+	current_date = datetime.date.isoformat(datetime.date.today())
+	assert date >= current_date, "Can't search for bus connections in the past"
+	departure_date.set(date)
+
+	search_button = session.at_css('.btn-warning')
+	search_button.click()
+
+	waiter = WaitMixin()
+
+	try:
+		waiter.wait_for(results_are_ready, interval=0.5, timeout=timeout)
+	except WaitTimeoutError as e:
+		LOGGER.debug("Request timed out. See error.png for a screenshot.")
+		session.driver.render('error.png')
+		raise WaitTimeoutError
+
+	results = session.driver.document().cssselect('div.search-result')
+	return results, session
 
 
 def parse_result(session, result):
@@ -119,13 +129,20 @@ def parse_result(session, result):
 			arrival_time=arrival_time, arrival_stop=arrival_stop, price=price,
 			company=company)
 	except:
-		LOGGER.debug("Can't parse results. See error.png for a screenshot.")
+		error_msg = "Can't parse results. See error.png/htm for details.\n{}".format(traceback.format_exc())
+		LOGGER.debug(error_msg)
 		session.driver.render('error.png')
+		with open('error.htm', 'w') as html_file:
+			html_file.write(etree.tostring(session.driver.document()))
+		if DEBUG:
+			pudb.set_trace()
+		else:
+			raise BusliniensucheParsingError(error_msg)
 
     
-def find_bus_connections(departure_stop, arrival_stop, date):
+def find_bus_connections(departure_stop, arrival_stop, date, timeout=10):
     session = create_browser_session(url=SEARCH_PAGE)
-    results, session = get_results(session, departure_stop, arrival_stop, date)
+    results, session = get_results(session, departure_stop, arrival_stop, date, timeout=timeout)
     connections = []
     for result in results:
         connections.append(parse_result(session, result))
@@ -149,12 +166,21 @@ def results2table(connections):
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
+	parser.add_argument('-d', '--debug', action='store_true',
+	                    help='debug mode')
+	parser.add_argument('-t', '--timeout', type=int,
+	                    help='wait at least n seconds for results')
 	parser.add_argument('origin')
 	parser.add_argument('destination')
 	parser.add_argument('date')
 	args = parser.parse_args(sys.argv[1:])
+	
+	if args.debug is True:
+		DEBUG = True
+	
 	try:
-		connections = find_bus_connections(args.origin, args.destination, args.date)
+		connections = find_bus_connections(args.origin, args.destination,
+		                                   args.date, args.timeout)
 		table = results2table(connections)
 		table.sort_key = natural_sort_key
 		#~ # table.sortby = u"Price"
