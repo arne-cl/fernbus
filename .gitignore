@@ -29,3 +29,5 @@ docs/_build
 include
 lib
 local
+.ipynb_checkpoints
+*.ipynb
