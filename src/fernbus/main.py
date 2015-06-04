@@ -140,7 +140,7 @@ def parse_result(session, result):
 			raise BusliniensucheParsingError(error_msg)
 
     
-def find_bus_connections(departure_stop, arrival_stop, date, timeout=10):
+def find_bus_connections(departure_stop, arrival_stop, date, timeout=60):
     session = create_browser_session(url=SEARCH_PAGE)
     results, session = get_results(session, departure_stop, arrival_stop, date, timeout=timeout)
     connections = []
