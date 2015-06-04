@@ -178,15 +178,12 @@ def run_cli():
 	if args.debug is True:
 		DEBUG = True
 	
-	try:
-		connections = find_bus_connections(args.origin, args.destination,
-		                                   args.date, args.timeout)
-		table = results2table(connections)
-		table.sort_key = natural_sort_key
-		#~ # table.sortby = u"Price"
-		print table
-	except:
-		datetime.datetime.now()
+	connections = find_bus_connections(args.origin, args.destination,
+									   args.date, args.timeout)
+	table = results2table(connections)
+	table.sort_key = natural_sort_key
+	#~ # table.sortby = u"Price"
+	print table
 
 
 if __name__ == '__main__':
