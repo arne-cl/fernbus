@@ -64,7 +64,7 @@ def create_browser_session(url=SEARCH_PAGE,
     return browser_session
         
 
-def get_results(session, departure_stop, arrival_stop, date, timeout=10):
+def get_results(session, departure_stop, arrival_stop, date, timeout):
 	LOGGER.debug("Trying to find buses from {} to {} on {}".format(departure_stop, arrival_stop, date))
     
 	def results_are_ready():
@@ -73,7 +73,7 @@ def get_results(session, departure_stop, arrival_stop, date, timeout=10):
 			return False if DELAY_MSG_REGEX.search(results[0].text) else True
 		except:
 			session.driver.render('error.png')
-			LOGGER.debug("Can't get results text")
+			LOGGER.debug("Can't get results text. You'll need to wait longer.")
     
 	start_field = session.at_css('#From')
 	start_field.set(departure_stop)
@@ -140,7 +140,7 @@ def parse_result(session, result):
 			raise BusliniensucheParsingError(error_msg)
 
     
-def find_bus_connections(departure_stop, arrival_stop, date, timeout=60):
+def find_bus_connections(departure_stop, arrival_stop, date, timeout):
     session = create_browser_session(url=SEARCH_PAGE)
     results, session = get_results(session, departure_stop, arrival_stop, date, timeout=timeout)
     connections = []
@@ -168,7 +168,7 @@ def run_cli():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-d', '--debug', action='store_true',
 	                    help='debug mode')
-	parser.add_argument('-t', '--timeout', type=int,
+	parser.add_argument('-t', '--timeout', type=int, default=60,
 	                    help='wait at least n seconds for results')
 	parser.add_argument('origin')
 	parser.add_argument('destination')
