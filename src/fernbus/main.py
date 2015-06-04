@@ -16,7 +16,7 @@ import dryscrape
 from dryscrape.mixins import WaitMixin, WaitTimeoutError
 import pudb
 
-from utils import create_module_logger, natural_sort_key
+from fernbus.utils import create_module_logger, natural_sort_key
 
 
 DEBUG = False
@@ -164,7 +164,7 @@ def results2table(connections):
     return table
 
 
-if __name__ == '__main__':
+def run_cli():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-d', '--debug', action='store_true',
 	                    help='debug mode')
@@ -187,3 +187,7 @@ if __name__ == '__main__':
 		print table
 	except:
 		datetime.datetime.now()
+
+
+if __name__ == '__main__':
+	run_cli()
