@@ -11,6 +11,7 @@ import traceback
 from utils import create_module_logger
 
 from lxml import etree
+from lxml import html as lh # TODO: rm after debugging
 from prettytable import PrettyTable
 import dryscrape
 from dryscrape.mixins import WaitMixin, WaitTimeoutError
@@ -23,18 +24,20 @@ DEBUG = False
 LOGGER = create_module_logger('main', filename='fernbus.log')
 SEARCH_PAGE = 'https://www.busliniensuche.de/'
 DELAY_MSG_REGEX = re.compile('Lade Busverbindungen')
+NO_RESULTS_REGEX = re.compile('Leider|keine')
 COMMA_REGEX = re.compile(',')
 
 
 # a Connection stores all the information about a single bus connection
 Connection = namedtuple('Connection',
                         ('departure_date departure_time departure_stop '
-                         'trip_duration number_of_stops '
+                         'trip_duration number_of_changeovers '
                          'arrival_date arrival_time arrival_stop '
                          'price company'))
 
 
 class BusliniensucheParsingError(Exception): pass
+class NoResultsError(Exception): pass
 
 
 def create_browser_session(url=SEARCH_PAGE,
@@ -108,6 +111,13 @@ def get_results(session, departure_stop, arrival_stop, date, timeout):
 
 
 def parse_result(session, result):
+	# WTF? The site has two different 'no results' errors in different locations
+	if NO_RESULTS_REGEX.search(result.text):
+		raise NoResultsError("Busliniensuche.de didn't find any matching bus connections.")
+	if result.xpath('div[1]/div[2]'):
+		if NO_RESULTS_REGEX.search(result.xpath('div[1]/div[2]')[0].text):
+			raise NoResultsError("Busliniensuche.de didn't find any bus connections.")
+
 	try:
 		departure = result.xpath('div[1]/div/div[1]/div[1]')[0]
 		departure_date = departure.xpath('div[1]/span[1]')[0].text
@@ -116,7 +126,13 @@ def parse_result(session, result):
 
 		duration = result.xpath('div[1]/div/div[1]/div[2]')[0]
 		trip_duration = duration.xpath('div[1]')[0].text
-		number_of_stops = duration.xpath('div[2]')[0].text
+
+		# how often do we have to switch buses?
+		changeovers_span = duration.xpath('div[2]/span/span')
+		if changeovers_span:
+			number_of_changeovers = int(changeovers_span[0].text)
+		else:
+			number_of_changeovers = 0
 
 		arrival = result.xpath('div[1]/div/div[1]/div[3]')[0]
 		arrival_date = arrival.xpath('div[1]/span[1]')[0].text
@@ -126,11 +142,15 @@ def parse_result(session, result):
 		price_str = result.xpath('div[1]/div/div[2]/div[2]/div[1]/span[2]/strong')[0].text.split()[0]
 		price = u"{0:.2f} €".format(float(COMMA_REGEX.sub('.', price_str)))
 
-		company = result.xpath('div[1]/div/div[2]/div[1]/div[1]/div[1]/span[2]')[0].text
+		try:
+			company = result.xpath('div[1]/div/div[2]/div[1]/div[1]/div[1]/span[2]')[0].text
+		except: # if the connection has changeovers, there might be more than one company
+			company = result.xpath('div[1]/div/div[2]/div[1]/div[2]/div[2]')[0].text
+
 		return Connection(
 			departure_date=departure_date, departure_time=departure_time,
 			departure_stop=departure_stop, trip_duration=trip_duration,
-			number_of_stops=number_of_stops, arrival_date=arrival_date,
+			number_of_changeovers=number_of_changeovers, arrival_date=arrival_date,
 			arrival_time=arrival_time, arrival_stop=arrival_stop, price=price,
 			company=company)
 	except:
@@ -155,17 +175,22 @@ def find_bus_connections(departure_stop, arrival_stop, date, timeout):
 
 
 def results2table(connections):
-    table = PrettyTable(["Departure", "Price", "From", "Arrival", "To", "Company"])
+    table = PrettyTable(["Departure", "Price", "Duration", "From", "Arrival", "To", "Companies"])
     table.align["Price"] = "r"
     table.align["From"] = "l"
     table.align["To"] = "l"
     table.align["Company"] = "l"
     for connection in connections:
-        table.add_row([
-            connection.departure_time, connection.price,
-            connection.departure_stop[:20],
-            connection.arrival_time, connection.arrival_stop[:20],
-            connection.company])
+		if connection.number_of_changeovers > 0:
+			duration = connection.trip_duration + '*'
+		else:
+			duration = connection.trip_duration
+
+		table.add_row([
+			connection.departure_time, connection.price, duration,
+			connection.departure_stop[:20],
+			connection.arrival_time, connection.arrival_stop[:20],
+			connection.company])
     return table
 
 
@@ -181,6 +206,7 @@ def run_cli():
 	args = parser.parse_args(sys.argv[1:])
 
 	if args.debug is True:
+		global DEBUG
 		DEBUG = True
 
 	connections = find_bus_connections(args.origin, args.destination,
@@ -189,7 +215,7 @@ def run_cli():
 	table.sort_key = natural_sort_key
 	#~ # table.sortby = u"Price"
 	print table
-
+	print "\n* Connection requires changeover(s)"
 
 if __name__ == '__main__':
 	run_cli()
